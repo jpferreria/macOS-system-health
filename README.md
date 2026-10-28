@@ -2,6 +2,8 @@
 
 A native **Swift / SwiftUI** macOS application (`MenuBarExtra` widget + Main Dashboard Window) that continuously monitors processes and system telemetry under **standard user permissions** to detect, alert, and remediate critical issues across **Memory**, **Storage**, **Network**, and **Battery**.
 
+![CritMonitor Dashboard Screenshot](assets/screenshot.png)
+
 ## Key Features
 
 - **Memory Monitoring (`Mach` + `libproc`)**:
