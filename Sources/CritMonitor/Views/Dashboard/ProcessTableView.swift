@@ -8,13 +8,13 @@ public struct ProcessTableView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             // Filter & Sort Toolbar
-            HStack(spacing: 12) {
-                HStack {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search process name, PID, or user...", text: $appState.searchQuery)
+                    TextField("Search process, PID, or user...", text: $appState.searchQuery)
                         .textFieldStyle(.plain)
                     if !appState.searchQuery.isEmpty {
                         Button {
@@ -26,24 +26,27 @@ public struct ProcessTableView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .background(Color(nsColor: .controlBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: 320)
+                .frame(minWidth: 180, maxWidth: 260)
 
-                Picker("Sort By", selection: $appState.selectedProcessSort) {
+                Picker("Sort", selection: $appState.selectedProcessSort) {
                     ForEach(ProcessSortField.allCases) { field in
                         Text(field.rawValue).tag(field)
                     }
                 }
+                .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 460)
+                .frame(maxWidth: 400)
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 Text("\(filteredAndSortedProcesses.count) Processes")
-                    .font(.caption)
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
 
             if let banner = appState.actionFeedbackBanner {
@@ -59,120 +62,133 @@ public struct ProcessTableView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
-            // Table Header
-            HStack {
-                Text("Process Name").frame(width: 200, alignment: .leading)
-                Text("PID").frame(width: 65, alignment: .trailing)
-                Text("User").frame(width: 85, alignment: .leading)
-                Text("Memory").frame(width: 95, alignment: .trailing)
-                Text("CPU %").frame(width: 75, alignment: .trailing)
-                Text("Energy").frame(width: 75, alignment: .trailing)
-                Text("Disk W/s").frame(width: 90, alignment: .trailing)
-                Text("Net I/O").frame(width: 95, alignment: .trailing)
-                Spacer()
-                Text("Remediation").frame(width: 210, alignment: .trailing)
-            }
-            .font(.caption.bold())
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
+            // Table Container
+            VStack(spacing: 0) {
+                // Table Header
+                HStack(spacing: 8) {
+                    Text("Process Name")
+                        .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
+                    Text("PID")
+                        .frame(width: 50, alignment: .trailing)
+                    Text("User")
+                        .frame(width: 62, alignment: .leading)
+                    Text("Memory")
+                        .frame(width: 76, alignment: .trailing)
+                    Text("CPU %")
+                        .frame(width: 56, alignment: .trailing)
+                    Text("Energy")
+                        .frame(width: 54, alignment: .trailing)
+                    Text("Disk W/s")
+                        .frame(width: 72, alignment: .trailing)
+                    Text("Net I/O")
+                        .frame(width: 72, alignment: .trailing)
+                    Text("Remediation")
+                        .frame(width: 172, alignment: .trailing)
+                }
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color.primary.opacity(0.03))
 
-            Divider()
+                Divider()
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(filteredAndSortedProcesses) { proc in
-                        HStack {
-                            HStack(spacing: 6) {
-                                Image(systemName: proc.isSystemCritical ? "lock.shield.fill" : "terminal.fill")
-                                    .foregroundStyle(proc.isSystemCritical ? Color.secondary : Color.blue)
-                                    .help(proc.isSystemCritical ? "System-protected process" : "User process")
-                                Text(proc.name)
-                                    .font(.callout.weight(.medium))
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 200, alignment: .leading)
-
-                            Text("\(proc.pid)")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 65, alignment: .trailing)
-
-                            Text(proc.user)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .frame(width: 85, alignment: .leading)
-
-                            Text(String(format: "%.1f MB", proc.memoryMB))
-                                .font(.system(.caption, design: .monospaced).bold())
-                                .foregroundStyle(proc.memoryMB >= appState.config.processMemoryCriticalMB ? Color.red : Color.primary)
-                                .frame(width: 95, alignment: .trailing)
-
-                            Text(String(format: "%.1f%%", proc.cpuPercent))
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(proc.cpuPercent >= 100 ? Color.orange : Color.primary)
-                                .frame(width: 75, alignment: .trailing)
-
-                            Text(String(format: "%.1f", proc.energyImpactScore))
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(width: 75, alignment: .trailing)
-
-                            Text(String(format: "%.2f MB/s", proc.diskWriteMBps))
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(width: 90, alignment: .trailing)
-
-                            Text(String(format: "%.2f MB/s", proc.netRxMBps + proc.netTxMBps))
-                                .font(.system(.caption, design: .monospaced))
-                                .frame(width: 95, alignment: .trailing)
-
-                            Spacer()
-
-                            HStack(spacing: 6) {
-                                Button("Inspect") {
-                                    appState.inspectProcess(proc)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredAndSortedProcesses) { proc in
+                            HStack(spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: proc.isSystemCritical ? "lock.shield.fill" : "terminal.fill")
+                                        .foregroundStyle(proc.isSystemCritical ? Color.secondary : Color.blue)
+                                        .help(proc.isSystemCritical ? "System-protected process" : "User process")
+                                    Text(proc.name)
+                                        .font(.callout.weight(.medium))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.mini)
+                                .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
 
-                                if !proc.executablePath.isEmpty {
-                                    Button {
-                                        ProcessActionService.revealInFinder(executablePath: proc.executablePath)
-                                    } label: {
-                                        Image(systemName: "folder")
+                                Text("\(proc.pid)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 50, alignment: .trailing)
+
+                                Text(proc.user)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(width: 62, alignment: .leading)
+
+                                Text(String(format: "%.1f MB", proc.memoryMB))
+                                    .font(.system(.caption, design: .monospaced).bold())
+                                    .foregroundStyle(proc.memoryMB >= appState.config.processMemoryCriticalMB ? Color.red : Color.primary)
+                                    .frame(width: 76, alignment: .trailing)
+
+                                Text(String(format: "%.1f%%", proc.cpuPercent))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(proc.cpuPercent >= 100 ? Color.orange : Color.primary)
+                                    .frame(width: 56, alignment: .trailing)
+
+                                Text(String(format: "%.1f", proc.energyImpactScore))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 54, alignment: .trailing)
+
+                                Text(String(format: "%.2f MB/s", proc.diskWriteMBps))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 72, alignment: .trailing)
+
+                                Text(String(format: "%.2f MB/s", proc.netRxMBps + proc.netTxMBps))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 72, alignment: .trailing)
+
+                                HStack(spacing: 4) {
+                                    Button("Inspect") {
+                                        appState.inspectProcess(proc)
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.mini)
-                                    .help("Reveal Binary in Finder")
-                                }
 
-                                Button("Quit") {
-                                    appState.terminateProcess(proc, force: false)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.orange)
-                                .controlSize(.mini)
-                                .disabled(proc.isSystemCritical)
+                                    if !proc.executablePath.isEmpty {
+                                        Button {
+                                            ProcessActionService.revealInFinder(executablePath: proc.executablePath)
+                                        } label: {
+                                            Image(systemName: "folder")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                        .help("Reveal Binary in Finder")
+                                    }
 
-                                Button("Kill") {
-                                    appState.terminateProcess(proc, force: true)
+                                    Button("Quit") {
+                                        appState.terminateProcess(proc, force: false)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.orange)
+                                    .controlSize(.mini)
+                                    .disabled(proc.isSystemCritical)
+
+                                    Button("Kill") {
+                                        appState.terminateProcess(proc, force: true)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.red)
+                                    .controlSize(.mini)
+                                    .disabled(proc.isSystemCritical)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.red)
-                                .controlSize(.mini)
-                                .disabled(proc.isSystemCritical)
+                                .frame(width: 172, alignment: .trailing)
                             }
-                            .frame(width: 210, alignment: .trailing)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            Divider()
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        Divider()
                     }
                 }
             }
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .padding(20)
+        .padding(16)
     }
 
     private var filteredAndSortedProcesses: [ProcessMetrics] {

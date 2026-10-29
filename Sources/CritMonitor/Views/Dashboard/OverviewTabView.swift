@@ -257,6 +257,7 @@ public struct OverviewTabView: View {
                     Text("Last 15m").tag(TimeInterval(900))
                     Text("Last 1h").tag(TimeInterval(3600))
                 }
+                .labelsHidden()
                 .pickerStyle(.segmented)
                 .frame(width: 240)
             }
@@ -371,15 +372,14 @@ public struct OverviewTabView: View {
 
             if let processes = appState.currentSnapshot?.processes.prefix(8) {
                 VStack(spacing: 0) {
-                    HStack {
-                        Text("Process").frame(width: 180, alignment: .leading)
-                        Text("PID").frame(width: 60, alignment: .trailing)
-                        Text("Memory").frame(width: 95, alignment: .trailing)
-                        Text("CPU %").frame(width: 75, alignment: .trailing)
-                        Text("Disk W/s").frame(width: 85, alignment: .trailing)
-                        Text("Net I/O").frame(width: 95, alignment: .trailing)
-                        Spacer()
-                        Text("Actions").frame(width: 150, alignment: .trailing)
+                    HStack(spacing: 8) {
+                        Text("Process").frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
+                        Text("PID").frame(width: 55, alignment: .trailing)
+                        Text("Memory").frame(width: 85, alignment: .trailing)
+                        Text("CPU %").frame(width: 65, alignment: .trailing)
+                        Text("Disk W/s").frame(width: 80, alignment: .trailing)
+                        Text("Net I/O").frame(width: 85, alignment: .trailing)
+                        Text("Actions").frame(width: 145, alignment: .trailing)
                     }
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
@@ -389,38 +389,37 @@ public struct OverviewTabView: View {
                     Divider()
 
                     ForEach(Array(processes)) { proc in
-                        HStack {
+                        HStack(spacing: 8) {
                             HStack(spacing: 6) {
                                 Image(systemName: proc.isSystemCritical ? "lock.shield" : "app.fill")
                                     .foregroundStyle(proc.isSystemCritical ? Color.secondary : Color.blue)
                                 Text(proc.name)
                                     .font(.callout.weight(.medium))
                                     .lineLimit(1)
+                                    .truncationMode(.tail)
                             }
-                            .frame(width: 180, alignment: .leading)
+                            .frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
 
                             Text("\(proc.pid)")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
-                                .frame(width: 60, alignment: .trailing)
+                                .frame(width: 55, alignment: .trailing)
 
                             Text(String(format: "%.0f MB", proc.memoryMB))
                                 .font(.system(.caption, design: .monospaced).bold())
-                                .frame(width: 95, alignment: .trailing)
+                                .frame(width: 85, alignment: .trailing)
 
                             Text(String(format: "%.1f%%", proc.cpuPercent))
                                 .font(.system(.caption, design: .monospaced))
-                                .frame(width: 75, alignment: .trailing)
+                                .frame(width: 65, alignment: .trailing)
 
                             Text(String(format: "%.2f MB/s", proc.diskWriteMBps))
                                 .font(.system(.caption, design: .monospaced))
-                                .frame(width: 85, alignment: .trailing)
+                                .frame(width: 80, alignment: .trailing)
 
                             Text(String(format: "%.2f MB/s", proc.netRxMBps + proc.netTxMBps))
                                 .font(.system(.caption, design: .monospaced))
-                                .frame(width: 95, alignment: .trailing)
-
-                            Spacer()
+                                .frame(width: 85, alignment: .trailing)
 
                             HStack(spacing: 6) {
                                 Button("Inspect") {
@@ -437,7 +436,7 @@ public struct OverviewTabView: View {
                                 .controlSize(.mini)
                                 .disabled(proc.isSystemCritical)
                             }
-                            .frame(width: 150, alignment: .trailing)
+                            .frame(width: 145, alignment: .trailing)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)

@@ -26,6 +26,7 @@ public struct SubsystemDetailView: View {
                         Text("15m").tag(TimeInterval(900))
                         Text("1h").tag(TimeInterval(3600))
                     }
+                    .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 200)
                 }

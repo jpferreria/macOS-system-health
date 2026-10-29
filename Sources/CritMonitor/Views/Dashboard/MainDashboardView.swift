@@ -8,7 +8,7 @@ public struct MainDashboardView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $appState.columnVisibility) {
             List(selection: $appState.selectedDestination) {
                 Section("Dashboard") {
                     NavigationLink(value: NavigationDestination.overview) {
@@ -58,7 +58,7 @@ public struct MainDashboardView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+            .navigationSplitViewColumnWidth(min: 195, ideal: 210, max: 240)
         } detail: {
             Group {
                 switch appState.selectedDestination {
@@ -74,6 +74,7 @@ public struct MainDashboardView: View {
                     ThresholdSettingsView(appState: appState)
                 }
             }
+            .frame(minWidth: 680, maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     HStack(spacing: 6) {
@@ -90,26 +91,24 @@ public struct MainDashboardView: View {
                     Button {
                         appState.isMonitoringPaused.toggle()
                     } label: {
-                        Label(
-                            appState.isMonitoringPaused ? "Resume" : "Pause",
-                            systemImage: appState.isMonitoringPaused ? "play.fill" : "pause.fill"
-                        )
+                        Image(systemName: appState.isMonitoringPaused ? "play.fill" : "pause.fill")
                     }
                     .help(appState.isMonitoringPaused ? "Resume live sampling" : "Pause live sampling")
 
                     Button {
                         Task { await appState.refreshNow() }
                     } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
                     }
                     .help("Refresh all telemetry immediately")
                 }
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .sheet(item: $appState.inspectedProcess) { proc in
             ProcessInspectorSheet(process: proc, appState: appState)
         }
-        .frame(minWidth: 1020, minHeight: 680)
+        .frame(minWidth: 920, minHeight: 620)
     }
 
     @ViewBuilder

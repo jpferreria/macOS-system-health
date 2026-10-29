@@ -22,6 +22,7 @@ public enum NavigationDestination: Hashable, Identifiable {
 
 @MainActor
 public final class AppState: ObservableObject {
+    @Published public var columnVisibility: NavigationSplitViewVisibility = .all
     @Published public var selectedDestination: NavigationDestination = .overview
     @Published public var currentSnapshot: SystemSnapshot?
     @Published public var activeIssues: [CriticalIssue] = []
