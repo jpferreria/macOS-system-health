@@ -98,7 +98,8 @@ public enum NetworkCollector {
             return [:]
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+        try? pipe.fileHandleForReading.close()
         process.waitUntilExit()
 
         guard let output = String(data: data, encoding: .utf8) else {

@@ -10,13 +10,13 @@ INSTALL_TO_APPS="${2:-false}"
 echo "Building CritMonitor executable ($CONFIG)..."
 swift build -c "$CONFIG"
 
-STAGE_DIR="/tmp/CritMonitor-stage"
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/CritMonitor-stage.XXXXXX")"
+trap 'rm -rf "$STAGE_DIR"' EXIT
 APP_DIR="$STAGE_DIR/CritMonitor.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
-rm -rf "$STAGE_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 cp -X "$PROJECT_DIR/.build/$CONFIG/CritMonitor" "$MACOS_DIR/CritMonitor"

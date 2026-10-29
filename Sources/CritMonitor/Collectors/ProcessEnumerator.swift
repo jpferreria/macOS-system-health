@@ -5,6 +5,7 @@ public struct RawProcessSample: Sendable {
     public let pid: pid_t
     public let ppid: pid_t
     public let uid: uid_t
+    public let startTimeSec: UInt64
     public let name: String
     public let executablePath: String
     public let user: String
@@ -40,24 +41,43 @@ public enum ProcessEnumerator {
         "CritMonitor"
     ]
 
-    private static var machTimebaseNumer: UInt64 = 1
-    private static var machTimebaseDenom: UInt64 = 1
-    private static let timebaseInitialized: Bool = {
+    private static let machTimebase: (numer: UInt64, denom: UInt64) = {
         var info = mach_timebase_info_data_t()
         if mach_timebase_info(&info) == KERN_SUCCESS, info.denom > 0 {
-            machTimebaseNumer = UInt64(info.numer)
-            machTimebaseDenom = UInt64(info.denom)
+            return (UInt64(info.numer), UInt64(info.denom))
         }
-        return true
+        return (1, 1)
     }()
 
     public static func machAbsoluteToNanoseconds(_ machTicks: UInt64) -> UInt64 {
-        _ = timebaseInitialized
-        let (product, overflow) = machTicks.multipliedReportingOverflow(by: machTimebaseNumer)
+        let (numer, denom) = machTimebase
+        let (product, overflow) = machTicks.multipliedReportingOverflow(by: numer)
         if overflow {
-            return (machTicks / machTimebaseDenom) * machTimebaseNumer
+            return (machTicks / denom) * numer
         }
-        return product / machTimebaseDenom
+        return product / denom
+    }
+
+    /// Safely decodes a fixed-size C char tuple without reading past the struct field boundary
+    public static func extractBoundedCString<T>(from tuple: T) -> String {
+        withUnsafeBytes(of: tuple) { rawBuffer in
+            let prefix = rawBuffer.prefix { $0 != 0 }
+            return String(decoding: prefix, as: UTF8.self)
+        }
+    }
+
+    /// Thread-safe username lookup using POSIX getpwuid_r
+    public static func resolveUsername(uid: uid_t) -> String {
+        var pwd = passwd()
+        var resultPtr: UnsafeMutablePointer<passwd>?
+        let bufSize = max(Int(sysconf(_SC_GETPW_R_SIZE_MAX)), 1024)
+        var buffer = [CChar](repeating: 0, count: bufSize)
+
+        let status = getpwuid_r(uid, &pwd, &buffer, bufSize, &resultPtr)
+        if status == 0, resultPtr != nil, let namePtr = pwd.pw_name {
+            return String(cString: namePtr)
+        }
+        return "\(uid)"
     }
 
     public static func sampleAllProcesses() -> [pid_t: RawProcessSample] {
@@ -66,13 +86,14 @@ public enum ProcessEnumerator {
 
         let capacity = Int(estimatedCount) * 2
         var pids = [pid_t](repeating: 0, count: capacity)
-        let actualBytesOrCount = pids.withUnsafeMutableBufferPointer { buffer -> Int32 in
+        let actualCount = pids.withUnsafeMutableBufferPointer { buffer -> Int32 in
             guard let baseAddress = buffer.baseAddress else { return 0 }
             return proc_listallpids(baseAddress, Int32(capacity * MemoryLayout<pid_t>.stride))
         }
 
-        guard actualBytesOrCount > 0 else { return [:] }
-        let pidCount = min(Int(actualBytesOrCount), capacity)
+        guard actualCount > 0 else { return [:] }
+        let pidCount = min(Int(actualCount), capacity)
+        let selfPID = getpid()
 
         var results = [pid_t: RawProcessSample](minimumCapacity: pidCount)
         var userCache = [uid_t: String]()
@@ -81,7 +102,7 @@ public enum ProcessEnumerator {
             let pid = pids[i]
             guard pid > 0 else { continue }
 
-            // 1. Get BSD info (name, ppid, uid)
+            // 1. Get BSD info (name, ppid, uid, start time)
             var bsdInfo = proc_bsdinfo()
             let bsdSize = proc_pidinfo(
                 pid,
@@ -97,17 +118,9 @@ public enum ProcessEnumerator {
             let pathLen = proc_pidpath(pid, &pathBuffer, UInt32(MAXPATHLEN))
             let execPath = pathLen > 0 ? String(cString: pathBuffer) : ""
 
-            // Extract process name
-            let bsdName: String = withUnsafePointer(to: &bsdInfo.pbi_name) { ptr in
-                ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN)) { cStr in
-                    String(cString: cStr)
-                }
-            }
-            let fallbackName: String = withUnsafePointer(to: &bsdInfo.pbi_comm) { ptr in
-                ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN)) { cStr in
-                    String(cString: cStr)
-                }
-            }
+            // Memory-safe bounded string extraction from fixed C char tuples
+            let bsdName = extractBoundedCString(from: bsdInfo.pbi_name)
+            let fallbackName = extractBoundedCString(from: bsdInfo.pbi_comm)
 
             let resolvedName: String
             if !bsdName.isEmpty {
@@ -118,7 +131,7 @@ public enum ProcessEnumerator {
                 resolvedName = fallbackName.isEmpty ? "pid-\(pid)" : fallbackName
             }
 
-            // 3. Get rusage_info_v4 (works for current user's processes and many visible daemons)
+            // 3. Get rusage_info_v4
             var rusage = rusage_info_v4()
             let rusageResult = withUnsafeMutablePointer(to: &rusage) { ptr -> Int32 in
                 ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { reboundPtr in
@@ -160,20 +173,22 @@ public enum ProcessEnumerator {
             let userName: String
             if let cached = userCache[uid] {
                 userName = cached
-            } else if let pw = getpwuid(uid), let namePtr = pw.pointee.pw_name {
-                let resolved = String(cString: namePtr)
+            } else {
+                let resolved = resolveUsername(uid: uid)
                 userCache[uid] = resolved
                 userName = resolved
-            } else {
-                userName = "\(uid)"
             }
 
-            let isProtected = pid <= 1 || uid == 0 || protectedProcessNames.contains(resolvedName)
+            let isProtected = pid <= 1
+                || pid == selfPID
+                || uid == 0
+                || protectedProcessNames.contains(resolvedName)
 
             results[pid] = RawProcessSample(
                 pid: pid,
                 ppid: Int32(bsdInfo.pbi_ppid),
                 uid: uid,
+                startTimeSec: bsdInfo.pbi_start_tvsec,
                 name: resolvedName,
                 executablePath: execPath,
                 user: userName,

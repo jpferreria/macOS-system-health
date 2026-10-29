@@ -10,9 +10,45 @@ public enum ProcessActionResult: Sendable {
 }
 
 public enum ProcessActionService {
+    /// Mitigates TOCTOU / PID-reuse race conditions by verifying the live process identity
+    /// and ownership via `proc_pidinfo(PROC_PIDTBSDINFO)` right before sending any signal.
+    private static func verifyTargetProcess(
+        pid: pid_t,
+        expectedName: String,
+        isSystemCritical: Bool
+    ) -> ProcessActionResult? {
+        if isSystemCritical || pid <= 1 || pid == getpid() || ProcessEnumerator.protectedProcessNames.contains(expectedName) {
+            return .blockedProtectedProcess("'\(expectedName)' (PID \(pid)) is a protected macOS system process and cannot be terminated.")
+        }
+
+        var bsdInfo = proc_bsdinfo()
+        let bsdSize = proc_pidinfo(
+            pid,
+            PROC_PIDTBSDINFO,
+            0,
+            &bsdInfo,
+            Int32(MemoryLayout<proc_bsdinfo>.stride)
+        )
+        guard bsdSize == Int32(MemoryLayout<proc_bsdinfo>.stride) else {
+            return .processNotFound("Process \(expectedName) (PID \(pid)) has already exited.")
+        }
+
+        let liveName = ProcessEnumerator.extractBoundedCString(from: bsdInfo.pbi_name)
+        let liveComm = ProcessEnumerator.extractBoundedCString(from: bsdInfo.pbi_comm)
+        if !liveName.isEmpty && liveName != expectedName && liveComm != expectedName {
+            return .blockedProtectedProcess("Aborted: PID \(pid) was recycled by '\(liveName)' (expected '\(expectedName)').")
+        }
+
+        if bsdInfo.pbi_uid != getuid() {
+            return .permissionDenied("Cannot terminate '\(expectedName)' (PID \(pid)): owned by UID \(bsdInfo.pbi_uid).")
+        }
+
+        return nil
+    }
+
     public static func terminateGracefully(pid: pid_t, name: String, isSystemCritical: Bool) -> ProcessActionResult {
-        if isSystemCritical || pid <= 1 || ProcessEnumerator.protectedProcessNames.contains(name) {
-            return .blockedProtectedProcess("'\(name)' (PID \(pid)) is a protected macOS system process and cannot be terminated.")
+        if let verificationFailure = verifyTargetProcess(pid: pid, expectedName: name, isSystemCritical: isSystemCritical) {
+            return verificationFailure
         }
 
         if let runningApp = NSRunningApplication(processIdentifier: pid), runningApp.terminate() {
@@ -23,7 +59,7 @@ public enum ProcessActionService {
         if res == 0 {
             return .success("Sent SIGTERM to \(name) (PID \(pid)).")
         } else if errno == EPERM {
-            return .permissionDenied("Insufficient permissions to terminate \(name) (PID \(pid)). It belongs to root or another user.")
+            return .permissionDenied("Insufficient permissions to terminate \(name) (PID \(pid)).")
         } else if errno == ESRCH {
             return .processNotFound("Process \(name) (PID \(pid)) has already exited.")
         } else {
@@ -32,8 +68,8 @@ public enum ProcessActionService {
     }
 
     public static func forceQuit(pid: pid_t, name: String, isSystemCritical: Bool) -> ProcessActionResult {
-        if isSystemCritical || pid <= 1 || ProcessEnumerator.protectedProcessNames.contains(name) {
-            return .blockedProtectedProcess("'\(name)' (PID \(pid)) is a protected macOS system process and cannot be force-killed.")
+        if let verificationFailure = verifyTargetProcess(pid: pid, expectedName: name, isSystemCritical: isSystemCritical) {
+            return verificationFailure
         }
 
         if let runningApp = NSRunningApplication(processIdentifier: pid), runningApp.forceTerminate() {
@@ -53,19 +89,23 @@ public enum ProcessActionService {
     }
 
     public static func revealInFinder(executablePath: String) {
-        guard !executablePath.isEmpty else { return }
-        let url = URL(fileURLWithPath: executablePath)
+        guard !executablePath.isEmpty,
+              executablePath.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: executablePath) else { return }
+        let url = URL(fileURLWithPath: executablePath).standardizedFileURL
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     /// Inspects open TCP/UDP sockets for a given PID using `/usr/sbin/lsof -Pan -p <pid> -i`
     public static func inspectOpenConnections(pid: pid_t) async -> [ProcessOpenConnection] {
-        await Task.detached(priority: .userInitiated) {
+        guard pid > 0 else { return [] }
+        return await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
             process.arguments = ["-Pan", "-p", "\(pid)", "-i"]
 
             let pipe = Pipe()
+            process.standardInput = FileHandle.nullDevice
             process.standardOutput = pipe
             process.standardError = FileHandle.nullDevice
 
@@ -75,7 +115,8 @@ public enum ProcessActionService {
                 return []
             }
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+            try? pipe.fileHandleForReading.close()
             process.waitUntilExit()
 
             guard let output = String(data: data, encoding: .utf8) else { return [] }

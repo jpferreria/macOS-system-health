@@ -125,13 +125,27 @@ public struct CritMonitorApp: App {
         precondition(tick2.contains(where: { $0.ruleId == "proc.battery.energy.9999" }), "Missing proc battery energy")
         print("  [PASS] IssueDetector Heuristics & Hysteresis (Memory, Storage, Network, Battery)")
 
-        // 3. Test Protected Process Safety Guard
+        // 3. Test Protected Process & TOCTOU PID-Reuse Safety Guard
         let guardRes = ProcessActionService.forceQuit(pid: 1, name: "launchd", isSystemCritical: true)
         if case .blockedProtectedProcess = guardRes {
             print("  [PASS] Protected Process Termination Safety Guard")
         } else {
             fatalError("Expected launchd to be protected from termination")
         }
+
+        // Verify self-PID and PID-name mismatch (TOCTOU protection) are blocked
+        let toctouRes = ProcessActionService.terminateGracefully(pid: getpid(), name: "recycled_worker", isSystemCritical: false)
+        if case .blockedProtectedProcess = toctouRes {
+            print("  [PASS] TOCTOU PID-Reuse & Self-Termination Guard")
+        } else {
+            fatalError("Expected TOCTOU / self-PID check to block termination")
+        }
+
+        // Verify bounded C-string tuple decoding with no null byte
+        let fullTuple: (UInt8, UInt8, UInt8, UInt8) = (65, 66, 67, 68) // "ABCD" without '\0'
+        let decodedTuple = ProcessEnumerator.extractBoundedCString(from: fullTuple)
+        precondition(decodedTuple == "ABCD", "Expected bounded string ABCD, got \(decodedTuple)")
+        print("  [PASS] Bounded C-Tuple Memory Safety")
 
         // 4. Test Live macOS System & Process Collectors
         let liveMem = MemoryCollector.collectSystemMemory()

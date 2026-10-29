@@ -52,7 +52,9 @@ public actor TelemetryEngine {
             var cpuPercent: Double = 0
             var idleWakeupsRate: Double = 0
 
-            if elapsedSeconds > 0, let prevRaw = previousProcessSamples[pid] {
+            if elapsedSeconds > 0,
+               let prevRaw = previousProcessSamples[pid],
+               raw.startTimeSec == prevRaw.startTimeSec {
                 if raw.diskReadBytes >= prevRaw.diskReadBytes {
                     diskReadRate = Double(raw.diskReadBytes - prevRaw.diskReadBytes) / elapsedSeconds
                 }
